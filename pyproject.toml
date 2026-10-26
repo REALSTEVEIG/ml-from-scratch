@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,11 +13,31 @@ license = { text = "MIT" }
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest>=7", "ruff>=0.5"]
+
+[project.scripts]
+mlscratch = "mlscratch.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-testpaths = ["tests"]
+testpaths = ["tests", "src"]
+addopts = "--doctest-modules --import-mode=importlib"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# B905: zip(strict=) is noise for same-length pairs; B007: kmeans reads the loop var after the loop.
+ignore = ["B905", "B007"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mlscratch"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]

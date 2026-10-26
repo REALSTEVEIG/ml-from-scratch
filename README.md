@@ -8,19 +8,26 @@ The goal is to show clear, tested and well-documented numerical code: each
 algorithm is written to be easy to read, fully type-hinted, vectorised where
 it matters, and strict about its inputs.
 
-## Contents
+## Project layout
 
 ```
 ml-from-scratch/
-├── pyproject.toml
+├── .github/workflows/ci.yml  lint + tests on Python 3.10-3.13
+├── pyproject.toml            packaging, `mlscratch` console script, ruff/pytest config
 ├── README.md
+├── data/
+│   └── iris.csv              Fisher's Iris: 150 rows, 4 features, 3 × 50 species
 ├── src/mlscratch/
-│   ├── __init__.py       public API
-│   ├── _validation.py    shared input checks + NotFittedError
-│   ├── distance.py       vectorised pairwise distances
-│   ├── knn.py            KNNClassifier, KNNRegressor
-│   └── kmeans.py         KMeans (k-means++ init)
-└── tests/                pytest suite
+│   ├── __init__.py           public API
+│   ├── __main__.py           `python -m mlscratch`
+│   ├── _validation.py        shared input checks + NotFittedError
+│   ├── cli.py                argparse CLI: `knn` and `kmeans` subcommands
+│   ├── data.py               load_csv, train_test_split, StandardScaler, make_blobs
+│   ├── distance.py           vectorised pairwise distances
+│   ├── knn.py                KNNClassifier, KNNRegressor
+│   ├── kmeans.py             KMeans (k-means++ init)
+│   └── metrics.py            accuracy_score, confusion_matrix, cluster_purity
+└── tests/                    pytest suite (unit + end-to-end CLI tests)
 ```
 
 ## Installation
@@ -32,8 +39,99 @@ cd ml-from-scratch
 pip install -e ".[dev]"
 ```
 
-The only runtime dependency is NumPy; `pytest` is installed with the `dev`
-extra.
+The only runtime dependency is NumPy; `pytest` and `ruff` are installed with
+the `dev` extra. Installing also adds an `mlscratch` command.
+
+## Quick start / end-to-end demo
+
+The repository ships with the classic Iris dataset in `data/iris.csv`
+(public domain; values follow Fisher's 1936 paper, which corrects two
+transcription errors in the common UCI copy).
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+ruff check .
+pytest
+```
+
+**Classify Iris with kNN.** The CLI loads the CSV, makes a stratified,
+seeded 70/30 train/test split, standardises features using the training
+part only, fits the model and reports test accuracy:
+
+```console
+$ mlscratch knn data/iris.csv
+Dataset:   data/iris.csv (150 rows, 4 features, 3 classes)
+Split:     105 train / 45 test (seed=42, stratified)
+Scaling:   standardised (fit on train)
+Model:     KNNClassifier(k=5, metric='euclidean', weights='uniform')
+Accuracy:  0.9333 (42/45)
+
+Confusion matrix (rows = true, columns = predicted):
+true \ pred  setosa  versicolor  virginica
+setosa           15           0          0
+versicolor        0          14          1
+virginica         0           2         13
+```
+
+Options: `-k`, `--metric {euclidean,manhattan}`, `--weights
+{uniform,distance}`, `--test-size` (fraction or row count), `--seed`,
+`--label` (column name or index, default last column), `--no-scale`,
+`--no-stratify`, `--no-header`, `--delimiter`.
+
+**Cluster Iris with k-means.** Labels are not used for fitting; if the file
+has a label column it is only used to report how pure the clusters are:
+
+```console
+$ python -m mlscratch kmeans data/iris.csv
+Dataset:   data/iris.csv (150 rows, 4 features)
+Scaling:   none
+Model:     KMeans(n_clusters=3, max_iter=300, tol=0.0001, n_init=10, random_state=42)
+Inertia:   78.8514
+Iterations (best run): 6
+Cluster sizes: 0: 62, 1: 50, 2: 38
+Purity vs 'species': 0.8933
+
+Cluster composition (rows = cluster, columns = label):
+cluster  setosa  versicolor  virginica
+0             0          48         14
+1            50           0          0
+2             0           2         36
+```
+
+Options: `-c/--clusters`, `--n-init`, `--max-iter`, `--seed`, `--scale`,
+`--label`, `--no-label`, `--no-header`, `--delimiter`.
+
+**Bad input fails cleanly** with a one-line message and exit code 1 (usage
+mistakes such as an unknown option exit with code 2):
+
+```console
+$ mlscratch knn missing.csv
+mlscratch: error: missing.csv: No such file or directory
+$ mlscratch kmeans bad.csv
+mlscratch: error: bad.csv, line 2, column 'b': expected a number, got 'x'.
+```
+
+**The same pipeline in Python:**
+
+```python
+from mlscratch import (
+    KNNClassifier, StandardScaler, accuracy_score, confusion_matrix,
+    load_csv, make_blobs, train_test_split,
+)
+
+ds = load_csv("data/iris.csv", label_column="species")
+X_tr, X_te, y_tr, y_te = train_test_split(ds.X, ds.y, test_size=0.3,
+                                          random_state=42, stratify=True)
+scaler = StandardScaler().fit(X_tr)
+clf = KNNClassifier(k=5).fit(scaler.transform(X_tr), y_tr)
+y_pred = clf.predict(scaler.transform(X_te))
+accuracy_score(y_te, y_pred)                 # 0.9333...
+matrix, labels = confusion_matrix(y_te, y_pred)
+
+X, y = make_blobs(300, centers=3, cluster_std=1.0, random_state=0)  # synthetic data
+```
 
 ## Usage
 
@@ -173,8 +271,10 @@ Notes:
 - The fast Euclidean formula can lose precision through cancellation when
   feature values are large and points are close together. Distances are
   clamped at zero, so they are never negative.
-- No feature scaling is done. Both algorithms are sensitive to features on
-  very different scales, so standardise inputs first.
+- The estimators do no feature scaling themselves. Both algorithms are
+  sensitive to features on very different scales, so standardise inputs
+  first (`StandardScaler`, or the CLI's default for `knn` / `--scale` for
+  `kmeans`).
 - k-means uses only Euclidean distance, assumes roughly round,
   similar-sized clusters, and finds local rather than global optima.
 - Dense NumPy arrays only; there is no sparse-matrix support.
@@ -183,10 +283,15 @@ Notes:
 
 ```bash
 cd ml-from-scratch
+ruff check .
 python -m pytest
 ```
 
 The suite covers hand-checkable examples, well-separated blobs (kNN reaches
 100% accuracy and k-means recovers the true clusters), reproducibility,
 `k=1` memorisation, weighting and tie-breaking, empty-cluster handling,
-convergence, and every validation error path.
+convergence, and every validation error path. It also checks the bundled
+Iris file (150 rows, 50 per species, known values), the data and metric
+helpers, and runs the CLI end to end, both in-process and as a real
+`python -m mlscratch` subprocess, including bad-file error paths. GitHub
+Actions runs ruff and pytest on Python 3.10-3.13 for every push.

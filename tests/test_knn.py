@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from mlscratch import KNNClassifier, KNNRegressor
 
 # A tiny 1-D dataset that is easy to reason about by hand.

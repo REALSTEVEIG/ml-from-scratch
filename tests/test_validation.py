@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from mlscratch import KMeans, KNNClassifier, KNNRegressor, NotFittedError
 from mlscratch._validation import (
     check_array,
